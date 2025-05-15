@@ -624,3 +624,20 @@ input[type="number"].bpm-input:focus {
   left: -0.1em;
   line-height: 0;
 }
+/* Brush toggle styling */
+.brush-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: calc(var(--box-size) * 0.04);
+  margin-bottom: calc(var(--box-size) * 0.05);
+  user-select: none;
+}
+
+.brush-toggle input[type="checkbox"] {
+  cursor: pointer;
+  width: calc(var(--box-size) * 0.20);
+  height: calc(var(--box-size) * 0.20);
+  margin: 0;
+  accent-color: #1976d2;
+}
