@@ -742,30 +742,3 @@ document.addEventListener("DOMContentLoaded", function() {
   playIcon.style.display = "block";
   pauseIcon.style.display = "none";
 });
-function isBrushEnabled() {
-  const brushToggle = document.getElementById('brushToggle');
-  return brushToggle && brushToggle.checked;
-}
-
-async function playBrush() {
-  if (!isBrushEnabled()) return;
-  await ensureAudio();
-  const duration = 0.09;
-  const bufferSize = ctx.sampleRate * duration;
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-  const noise = ctx.createBufferSource();
-  noise.buffer = buffer;
-  const filter = ctx.createBiquadFilter();
-  filter.type = "bandpass";
-  filter.frequency.value = 2000;
-  filter.Q.value = 1.8;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.5;
-  gain.gain.setValueAtTime(0.5, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
-  noise.connect(filter).connect(gain).connect(masterGain);
-  noise.start();
-  noise.stop(ctx.currentTime + duration);
-}
