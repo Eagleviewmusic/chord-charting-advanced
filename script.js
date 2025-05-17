@@ -1,17 +1,19 @@
 // --- Sound Synthesis Variables ---
 let ctx = null, masterGain = null, compressor = null;
 let customVoiceWave = null;
-// CHANGED: use 'saw' instead of 'sawtooth'
 const waveforms = ['sine', 'triangle', 'square', 'saw', 'voice'];
 let currentWaveformIndex = 1;
 let currentWaveform = waveforms[currentWaveformIndex];
 
 // A/B toggle variables
 let currentToggle = 'A'; // Default to A
-let progressionA = ['', '', '', '']; // Store the chord selections for A
-let progressionB = ['', '', '', '']; // Store the chord selections for B
-let rhythmBoxesA = Array(8).fill(false); // Store the rhythm box states for A (8 boxes total)
-let rhythmBoxesB = Array(8).fill(false); // Store the rhythm box states for B (8 boxes total)
+let progressionA = ['', '', '', ''];
+let progressionB = ['', '', '', ''];
+let rhythmBoxesA = Array(8).fill(false);
+let rhythmBoxesB = Array(8).fill(false);
+// 7th chord toggles per slot for A and B
+let seventhA = [false, false, false, false];
+let seventhB = [false, false, false, false];
 
 function setupCustomVoiceWave() {
   const harmonics = 20;
@@ -60,30 +62,33 @@ function handleWaveformDial(dir) {
 
 // --- A/B Toggle Functions ---
 function saveCurrentProgression() {
-  // Save the current chord selections and rhythm boxes state to the current toggle
+  // Save the current chord selections, rhythm boxes state, and 7th toggles to the current toggle
   const chordValues = Array.from(document.querySelectorAll('.chord-select')).map(select => select.value);
   const rhythmBoxStates = Array.from(document.querySelectorAll('.bottom-rhythm-box')).map(box => box.classList.contains('active'));
-  
+  const seventhStates = Array.from(document.querySelectorAll('.seventh-btn')).map(btn => btn.classList.contains('active'));
   if (currentToggle === 'A') {
     progressionA = [...chordValues];
     rhythmBoxesA = [...rhythmBoxStates];
+    seventhA = [...seventhStates];
   } else {
     progressionB = [...chordValues];
     rhythmBoxesB = [...rhythmBoxStates];
+    seventhB = [...seventhStates];
   }
 }
 
 function loadProgression(toggle) {
-  // Load the chord selections and rhythm box states from the specified toggle
+  // Load the chord selections, rhythm box states, and 7th toggles from the specified toggle
   const progression = toggle === 'A' ? progressionA : progressionB;
   const rhythmBoxStates = toggle === 'A' ? rhythmBoxesA : rhythmBoxesB;
-  
+  const seventhStates = toggle === 'A' ? seventhA : seventhB;
+
   // Set chord selections
   document.querySelectorAll('.chord-select').forEach((select, idx) => {
     select.value = progression[idx];
-    setSlotColorAndStyle(idx, select);
+    setSlotColorAndStyle(idx, select, seventhStates[idx]);
   });
-  
+
   // Set rhythm box states
   document.querySelectorAll('.bottom-rhythm-box').forEach((box, idx) => {
     if (rhythmBoxStates[idx]) {
@@ -92,68 +97,421 @@ function loadProgression(toggle) {
       box.classList.remove('active');
     }
   });
-  
-  // Update rhythm pictures based on new state
+
+  // Set 7th button states
+  document.querySelectorAll('.seventh-btn').forEach((btn, idx) => {
+    if (seventhStates[idx]) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
   updateRhythmPictures();
 }
 
 function switchToggle(toggle) {
   if (currentToggle === toggle) return; // No change needed
-  
+
   // Save current state to current toggle
   saveCurrentProgression();
-  
+
   // Update toggle state
   currentToggle = toggle;
-  
+
   // Update toggle buttons UI
   document.getElementById('toggleA').classList.toggle('ab-active', toggle === 'A');
   document.getElementById('toggleB').classList.toggle('ab-active', toggle === 'B');
-  
+
   // Load the state from the newly selected toggle
   loadProgression(toggle);
 }
 
-document.addEventListener("DOMContentLoaded", function() {
-  document.getElementById("wave-left").onclick = () => handleWaveformDial(-1);
-  document.getElementById("wave-right").onclick = () => handleWaveformDial(1);
-  document.getElementById("wave-left").addEventListener("keydown", (e) => {
-    if (e.key === " " || e.key === "Enter" || e.key === "ArrowLeft") {
-      e.preventDefault();
-      handleWaveformDial(-1);
-      document.getElementById("wave-left").focus();
-    }
-  });
-  document.getElementById("wave-right").addEventListener("keydown", (e) => {
-    if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight") {
-      e.preventDefault();
-      handleWaveformDial(1);
-      document.getElementById("wave-right").focus();
-    }
-  });
-  updateWaveformDisplay();
+// --- 7th Chord Logic ---
 
-  // Initialize A/B toggle button listeners
-  document.getElementById('toggleA').addEventListener('click', () => switchToggle('A'));
-  document.getElementById('toggleB').addEventListener('click', () => switchToggle('B'));
-  
-  // Also add keyboard navigation for the A/B toggle
-  document.getElementById('toggleA').addEventListener('keydown', (e) => {
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      switchToggle('A');
+// Minor 7th for all chords (dominant 7th for major triads, minor 7th for minor triads)
+const chordTones = {
+  'C':   ['C', 'E', 'G'],
+  'Dm':  ['D', 'F', 'A'],
+  'Em':  ['E', 'G', 'B'],
+  'F':   ['F', 'A', 'C'],
+  'G':   ['G', 'B', 'D'],
+  'Am':  ['A', 'C', 'E'],
+  'D':   ['D', 'F♯', 'A'],
+  'E':   ['E', 'G♯', 'B'],
+  'Bb':  ['B♭', 'D', 'F']
+};
+// The additional note for a minor 7th (or dominant 7th for major chords)
+const chordSevenths = {
+  'C':   'B♭',
+  'Dm':  'C',
+  'Em':  'D',
+  'F':   'E♭',
+  'G':   'F',
+  'Am':  'G',
+  'D':   'C',
+  'E':   'D',
+  'Bb':  'A♭'
+};
+// Used for playback, must use pitch names with octave!
+const rhythmChordNotes = {
+  'C':  ['C3', 'C4', 'E4', 'G4', 'C5'],
+  'Dm': ['D3', 'D4', 'F4', 'A4'],
+  'Em': ['E3', 'E4', 'G4', 'B4'],
+  'F':  ['F3', 'C4', 'F4', 'A4', 'C5'],
+  'G':  ['G3', 'D4', 'G4', 'B4'],
+  'Am': ['A3', 'E4', 'A4', 'C5'],
+  'D':  ['D3', 'D4', 'F#4', 'A4'],
+  'E':  ['E3', 'E4', 'G#4', 'B4'],
+  'Bb': ['Bb3', 'D4', 'F4', 'Bb4']
+};
+const rhythmChordSeventhNotes = {
+  'C':  'Bb4',
+  'Dm': 'C5',
+  'Em': 'D5',
+  'F':  'Eb5',
+  'G':  'F4',
+  'Am': 'G4',
+  'D':  'C5',
+  'E':  'D5',
+  'Bb': 'Ab4'
+};
+
+const noteColorClass = {
+  'C': 'note-C',
+  'D': 'note-D',
+  'E': 'note-E',
+  'F': 'note-F',
+  'G': 'note-G',
+  'A': 'note-A',
+  'B': 'note-B',
+  'F♯': 'note-F',
+  'G♯': 'note-G',
+  'B♭': 'note-B',
+  'E♭': 'note-E',
+  'A♭': 'note-A'
+};
+
+const restDashImgUrl = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/1100d582ac41ba2d0b1794da6dd96026a3869249/Cartoon%20RhythmBox5.svg";
+const dashImgUrl = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox1.svg";
+const rhythmBox2 = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox2.svg";
+const rhythmBox3 = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox3.svg";
+const rhythmBox4 = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox4.svg";
+
+// --- UI Slot Content and Color ---
+function setSlotColorAndStyle(slotIndex, select, addSeventhArg) {
+  // Determine whether to add the 7th based on currentToggle and state arrays
+  let addSeventh;
+  if (typeof addSeventhArg === 'boolean') {
+    addSeventh = addSeventhArg;
+  } else {
+    let seventhArr = currentToggle === 'A' ? seventhA : seventhB;
+    addSeventh = seventhArr[slotIndex];
+  }
+  setSlotContent(slotIndex, select.value, addSeventh);
+  select.classList.remove(
+    'c-selected-c', 'c-selected-dm', 'c-selected-em', 
+    'c-selected-f', 'c-selected-g', 'c-selected-am',
+    'c-selected-d', 'c-selected-e', 'c-selected-bb'
+  );
+  switch(select.value) {
+    case 'C':  select.classList.add('c-selected-c'); break;
+    case 'Dm': select.classList.add('c-selected-dm'); break;
+    case 'Em': select.classList.add('c-selected-em'); break;
+    case 'F':  select.classList.add('c-selected-f'); break;
+    case 'G':  select.classList.add('c-selected-g'); break;
+    case 'Am': select.classList.add('c-selected-am'); break;
+    case 'D':  select.classList.add('c-selected-d'); break;
+    case 'E':  select.classList.add('c-selected-e'); break;
+    case 'Bb': select.classList.add('c-selected-bb'); break;
+    default: break;
+  }
+}
+
+function setSlotContent(slotIndex, chord, addSeventh) {
+  const slot = document.getElementById('slot' + slotIndex);
+  const noteRects = slot.querySelector('.note-rects');
+  let img = slot.querySelector('.dash-img-slot');
+  noteRects.innerHTML = '';
+  if (chord === "") {
+    if (!img) {
+      img = document.createElement('img');
+      img.className = 'dash-img-slot';
+      img.src = restDashImgUrl;
+      img.alt = "Rhythm Box Rest";
+      slot.insertBefore(img, slot.querySelector('.chord-select'));
+    } else {
+      img.src = restDashImgUrl;
+      img.alt = "Rhythm Box Rest";
+      img.style.display = "block";
+    }
+    return;
+  } else {
+    if (img) img.style.display = "none";
+  }
+  slot.className = 'slot-box';
+  if (!chord || chord === "empty" || chord === "") {
+    return;
+  }
+  const tones = chordTones[chord];
+  if (!tones) return;
+
+  let rects = tones.map(note => {
+    if (note.includes('♯')) {
+      const baseLetter = note.charAt(0);
+      return `<div class="note-rect ${noteColorClass[note]}">
+        ${baseLetter}<span class="accidental sharp">♯</span>
+      </div>`;
+    } else if (note.includes('♭')) {
+      const baseLetter = note.charAt(0);
+      return `<div class="note-rect ${noteColorClass[note]}">
+        ${baseLetter}<span class="accidental flat">♭</span>
+      </div>`;
+    } else {
+      return `<div class="note-rect ${noteColorClass[note]}">${note}</div>`;
     }
   });
-  document.getElementById('toggleB').addEventListener('keydown', (e) => {
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      switchToggle('B');
+
+  // Add the seventh if enabled and the chord has a defined 7th
+  if (addSeventh && chordSevenths[chord]) {
+    let note = chordSevenths[chord];
+    let baseLetter = note.charAt(0);
+    let colorClass = noteColorClass[note] || noteColorClass[baseLetter];
+    let display;
+    if (note.includes('♯')) {
+      display = `<div class="note-rect note-7th ${colorClass}">
+        ${baseLetter}<span class="accidental sharp">♯</span>
+      </div>`;
+    } else if (note.includes('♭')) {
+      display = `<div class="note-rect note-7th ${colorClass}">
+        ${baseLetter}<span class="accidental flat">♭</span>
+      </div>`;
+    } else {
+      display = `<div class="note-rect note-7th ${colorClass}">${note}</div>`;
     }
-  });
-  
-  // Initialize progression A with current state
+    rects.push(display);
+}
+  noteRects.innerHTML = rects.join('');
+}
+
+// --- 7th Button Logic ---
+function toggleSeventh(idx) {
+  let seventhArr = currentToggle === 'A' ? seventhA : seventhB;
+  seventhArr[idx] = !seventhArr[idx];
+  updateSeventhBtnStates();
+  // Re-render the slot content
+  const select = document.getElementById('slot'+idx).querySelector('.chord-select');
+  setSlotColorAndStyle(idx, select, seventhArr[idx]);
   saveCurrentProgression();
-});
+}
+function updateSeventhBtnStates() {
+  let seventhArr = currentToggle === 'A' ? seventhA : seventhB;
+  document.querySelectorAll('.seventh-btn').forEach((btn, idx) => {
+    btn.classList.toggle('active', seventhArr[idx]);
+  });
+}
+
+// --- Rhythm Pictures ---
+function updateRhythmPictures() {
+  for (let pair = 0; pair < 4; ++pair) {
+    const box1 = document.querySelector(`.bottom-rhythm-box[data-pair="${pair}"][data-which="0"]`);
+    const box2 = document.querySelector(`.bottom-rhythm-box[data-pair="${pair}"][data-which="1"]`);
+    const picDiv = document.getElementById('bottomPic'+pair);
+    const img = picDiv.querySelector('.bottom-picture-img');
+    let url = dashImgUrl;
+    if (box1.classList.contains('active') && !box2.classList.contains('active')) {
+      url = rhythmBox2;
+    } else if (box1.classList.contains('active') && box2.classList.contains('active')) {
+      url = rhythmBox3;
+    } else if (!box1.classList.contains('active') && box2.classList.contains('active')) {
+      url = rhythmBox4;
+    }
+    img.src = url;
+  }
+}
+
+// --- Playback logic ---
+
+let isPlaying = false;
+let rhythmInterval = null;
+let slotIds = ['slot0', 'slot1', 'slot2', 'slot3'];
+let slotHighlightStep = 0;
+let pictureHighlightStep = 0;
+let rhythmStep = 0;
+
+function getBpmInputValue() {
+  const bpmInput = document.getElementById('bpmInput');
+  let val = parseInt(bpmInput.value, 10);
+  if (isNaN(val)) val = 90;
+  return val;
+}
+function setBpmInputValue(val) {
+  const bpmInput = document.getElementById('bpmInput');
+  bpmInput.value = val;
+}
+function clampBpm(val) {
+  return Math.max(30, Math.min(300, val));
+}
+
+function setPlaying(playing) {
+  isPlaying = playing;
+  const playIcon = document.getElementById('playIcon');
+  const pauseIcon = document.getElementById('pauseIcon');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  if (isPlaying) {
+    playIcon.style.display = "none";
+    pauseIcon.style.display = "block";
+    playPauseBtn.title = "Pause";
+    playPauseBtn.setAttribute('aria-label', 'Pause');
+    startMainAnimation();
+  } else {
+    playIcon.style.display = "block";
+    pauseIcon.style.display = "none";
+    playPauseBtn.title = "Play";
+    playPauseBtn.setAttribute('aria-label', 'Play');
+    stopMainAnimation();
+  }
+}
+
+function startMainAnimation() {
+  stopMainAnimation();
+  if (typeof startMainAnimation.preservedSteps === "object" && startMainAnimation.preservedSteps.keep) {
+    slotHighlightStep = startMainAnimation.preservedSteps.slotHighlightStep;
+    pictureHighlightStep = startMainAnimation.preservedSteps.pictureHighlightStep;
+    rhythmStep = startMainAnimation.preservedSteps.rhythmStep;
+    startMainAnimation.preservedSteps.keep = false;
+  } else {
+    slotHighlightStep = 0;
+    pictureHighlightStep = 0;
+    rhythmStep = 0;
+  }
+  updateSlotHighlights();
+  updatePictureHighlights();
+  const bpm = getBpmInputValue();
+  const intervalMs = (60 / bpm) * 1000 / 2;
+  playEighthNoteStep();
+  rhythmInterval = setInterval(playEighthNoteStep, intervalMs);
+}
+
+function stopMainAnimation() {
+  if (rhythmInterval) clearInterval(rhythmInterval);
+  for (let i = 0; i < slotIds.length; i++) unhighlightSlot(i);
+  for (let i = 0; i < 4; i++) unhighlightPicture(i);
+}
+
+function restartAnimationWithBpm() {
+  if (isPlaying) {
+    if (!startMainAnimation.preservedSteps) startMainAnimation.preservedSteps = {};
+    startMainAnimation.preservedSteps.keep = true;
+    startMainAnimation.preservedSteps.slotHighlightStep = slotHighlightStep;
+    startMainAnimation.preservedSteps.pictureHighlightStep = pictureHighlightStep;
+    startMainAnimation.preservedSteps.rhythmStep = rhythmStep;
+    startMainAnimation();
+  }
+}
+
+function playEighthNoteStep() {
+  const currentSlotIdx = slotHighlightStep % 4;
+  const currentSelect = document.getElementById(`slot${currentSlotIdx}`).querySelector('.chord-select');
+  const whichBox = rhythmStep % 8;
+  const pair = Math.floor(whichBox / 2);
+  const which = whichBox % 2;
+  const box = document.querySelector(`.bottom-rhythm-box[data-pair="${pair}"][data-which="${which}"]`);
+  if (box && box.classList.contains('active')) {
+    if (currentSelect.value === "") {
+      playBassDrum();
+    } else if (currentSelect.value === "empty") {
+      // Play nothing
+    } else {
+      // Handle 7th
+      let addSeventh = (currentToggle === 'A' ? seventhA : seventhB)[currentSlotIdx];
+      let notes = rhythmChordNotes[currentSelect.value] ? [...rhythmChordNotes[currentSelect.value]] : [];
+      if (addSeventh && rhythmChordSeventhNotes[currentSelect.value]) {
+        notes.push(rhythmChordSeventhNotes[currentSelect.value]);
+      }
+      playTriangleNotes(notes);
+    }
+  }
+
+  if (rhythmStep % 2 === 0) {
+    playBrush();
+    updatePictureHighlights();
+    pictureHighlightStep = (pictureHighlightStep + 1) % 4;
+  }
+
+  if (rhythmStep === 0) {
+    updateSlotHighlights();
+  }
+
+  rhythmStep = (rhythmStep + 1) % 8;
+  if (rhythmStep === 0) {
+    slotHighlightStep = (slotHighlightStep + 1) % 4;
+  }
+}
+
+function updateSlotHighlights() {
+  for (let i = 0; i < slotIds.length; i++) unhighlightSlot(i);
+  if (isPlaying) {
+    highlightSlot(slotHighlightStep % 4);
+  }
+}
+function highlightSlot(idx) {
+  document.getElementById(slotIds[idx]).classList.add('enlarged');
+}
+function unhighlightSlot(idx) {
+  document.getElementById(slotIds[idx]).classList.remove('enlarged');
+}
+
+function updatePictureHighlights() {
+  for (let i = 0; i < 4; i++) unhighlightPicture(i);
+  if (isPlaying) {
+    highlightPicture(pictureHighlightStep % 4);
+  }
+}
+function highlightPicture(idx) {
+  document.getElementById('bottomPic'+idx).classList.add('picture-highlighted');
+}
+function unhighlightPicture(idx) {
+  document.getElementById('bottomPic'+idx).classList.remove('picture-highlighted');
+}
+
+function clearAll() {
+  // Clear the chord selections
+  for (let i = 0; i < 4; i++) {
+    const slot = document.getElementById('slot'+i);
+    slot.querySelector('.note-rects').innerHTML = '';
+    const select = slot.querySelector('.chord-select');
+    select.selectedIndex = 0;
+    setSlotColorAndStyle(i, select, false);
+    slot.classList.remove('enlarged');
+    let img = slot.querySelector('.dash-img-slot');
+    if (img) {
+      img.src = restDashImgUrl;
+      img.alt = "Rhythm Box Rest";
+      img.style.display = "block";
+    }
+    // Clear 7th button
+    const btn = slot.querySelector('.seventh-btn');
+    if (btn) btn.classList.remove('active');
+  }
+
+  // Clear the rhythm boxes
+  document.querySelectorAll('.bottom-rhythm-box').forEach(box => box.classList.remove('active'));
+  updateRhythmPictures();
+
+  // Clear 7th arrays
+  if(currentToggle === 'A'){
+    seventhA = [false, false, false, false];
+  }else{
+    seventhB = [false, false, false, false];
+  }
+  updateSeventhBtnStates();
+
+  // Update the current progression in memory (A or B)
+  saveCurrentProgression();
+
+  setPlaying(false);
+}
 
 // --------- SOUND PLAYERS ----------
 
@@ -248,7 +606,6 @@ async function playTriangleNotes(notes) {
       lfo.stop(ctx.currentTime + duration + 0.01 * i + 0.08);
     } else {
       osc = ctx.createOscillator();
-      // CHANGED: Use AudioContext's 'sawtooth' for 'saw'
       osc.type = currentWaveform === "saw" ? "sawtooth" : currentWaveform;
       osc.frequency.value = freq;
       filter = ctx.createBiquadFilter();
@@ -277,13 +634,15 @@ async function playTriangleNotes(notes) {
 }
 
 function midiToFreq(n) {
-  const notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'B':11};
+  // Accepts note strings like C4, F#4, Bb4, etc.
+  const notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'B':11,
+    'F♯':6, 'G♯':8, 'B♭':10, 'E♭':3, 'A♭':8 };
    let note, octave;
   if (n.includes('♭')) {
-    note = n.slice(0, 2); // For unicode flat symbol
+    note = n.slice(0, 2);
     octave = parseInt(n.slice(2));
   } else if (n.includes('♯')) {
-    note = n.slice(0, 2); // For unicode sharp symbol
+    note = n.slice(0, 2);
     octave = parseInt(n.slice(2));
   } else if (n.length > 2 && (n[1] === '#' || n[1] === 'b')) {
     note = n.slice(0, 2);
@@ -292,327 +651,78 @@ function midiToFreq(n) {
     note = n.slice(0, n.length-1);
     octave = parseInt(n[n.length-1]);
   }
-  
   return 440 * Math.pow(2, (notes[note]+(octave-4)*12-9)/12);
 }
 
-// --- App logic and UI variables ---
-const chordTones = {
-  'C':   ['C', 'E', 'G'],
-  'Dm':  ['D', 'F', 'A'],
-  'Em':  ['E', 'G', 'A'],
-  'F':   ['F', 'A', 'C'],
-  'G':   ['G', 'B', 'D'],
-  'Am':  ['A', 'C', 'E'],
-  'D':   ['D', 'F♯', 'A'], // Using unicode sharp symbol
-  'E':   ['E', 'G♯', 'B'], // Using unicode sharp symbol
-  'Bb':  ['B♭', 'D', 'F']  // Using unicode flat symbol
-};
-const noteColorClass = {
-  'C': 'note-C',
-  'D': 'note-D',
-  'E': 'note-E',
-  'F': 'note-F',
-  'G': 'note-G',
-  'A': 'note-A',
-  'B': 'note-B',
-    'F♯': 'note-F', // Using the F base color
-  'G♯': 'note-G', // Using the G base color
-  'B♭': 'note-B'  // Using the B color
-};
-const restDashImgUrl = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/1100d582ac41ba2d0b1794da6dd96026a3869249/Cartoon%20RhythmBox5.svg";
-const dashImgUrl = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox1.svg";
-const rhythmBox2 = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox2.svg";
-const rhythmBox3 = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox3.svg";
-const rhythmBox4 = "https://raw.githubusercontent.com/VisualMusicalMinds/Musical-Images/48e79626ae5b3638784c98a6f73ec0e342cf9894/Cartoon%20RhythmBox4.svg";
-
-// Added bass note for each chord as requested, and updated Am to remove C4
-const rhythmChordNotes = {
-  'C':  ['C3', 'C4', 'E4', 'G4', 'C5'],
-  'Dm': ['D3', 'D4', 'F4', 'A4'],
-  'Em': ['E3', 'E4', 'G4', 'B4'],
-  'F':  ['F3', 'C4', 'F4', 'A4', 'C5'],
-  'G':  ['G3', 'D4', 'G4', 'B4'],
-  'Am': ['A3', 'E4', 'A4', 'C5'],
-    'D':  ['D3', 'D4', 'F#4', 'A4'],
-  'E':  ['E3', 'E4', 'G#4', 'B4'],
-  'Bb': ['Bb3', 'D4', 'F4', 'Bb4']
-};
-
-function setSlotColorAndStyle(slotIndex, select) {
-  setSlotContent(slotIndex, select.value);
-  select.classList.remove(
-    'c-selected-c', 'c-selected-dm', 'c-selected-em', 
-    'c-selected-f', 'c-selected-g', 'c-selected-am',
-    'c-selected-d', 'c-selected-e', 'c-selected-bb'
-  );
-  switch(select.value) {
-    case 'C':  select.classList.add('c-selected-c'); break;
-    case 'Dm': select.classList.add('c-selected-dm'); break;
-    case 'Em': select.classList.add('c-selected-em'); break;
-    case 'F':  select.classList.add('c-selected-f'); break;
-    case 'G':  select.classList.add('c-selected-g'); break;
-    case 'Am': select.classList.add('c-selected-am'); break;
-    case 'D':  select.classList.add('c-selected-d'); break;
-    case 'E':  select.classList.add('c-selected-e'); break;
-    case 'Bb': select.classList.add('c-selected-bb'); break;
-    default: break;
-  }
-}
-function setSlotContent(slotIndex, chord) {
-  const slot = document.getElementById('slot' + slotIndex);
-  const noteRects = slot.querySelector('.note-rects');
-  let img = slot.querySelector('.dash-img-slot');
-  noteRects.innerHTML = '';
-  if (chord === "") {
-    if (!img) {
-      img = document.createElement('img');
-      img.className = 'dash-img-slot';
-      img.src = restDashImgUrl;
-      img.alt = "Rhythm Box Rest";
-      slot.insertBefore(img, slot.querySelector('.chord-select'));
-    } else {
-      img.src = restDashImgUrl;
-      img.alt = "Rhythm Box Rest";
-      img.style.display = "block";
-    }
-  } else {
-    if (img) img.style.display = "none";
-  }
-  slot.className = 'slot-box';
-  if (!chord || chord === "empty" || chord === "") {
-    return;
-  }
-  const tones = chordTones[chord];
-  
-  if (!tones) return;
-  
-  noteRects.innerHTML = tones.map(note => {
-    let displayNote = note;
-    
-    // Format notes with accidentals
-    if (note.includes('♯')) {
-      const baseLetter = note.charAt(0);
-      return `<div class="note-rect ${noteColorClass[note]}">
-        ${baseLetter}<span class="accidental sharp">♯</span>
-      </div>`;
-    } else if (note.includes('♭')) {
-      const baseLetter = note.charAt(0);
-      return `<div class="note-rect ${noteColorClass[note]}">
-        ${baseLetter}<span class="accidental flat">♭</span>
-      </div>`;
-    } else {
-      return `<div class="note-rect ${noteColorClass[note]}">${note}</div>`;
-    }
-  }).join('');
-}
-function updateRhythmPictures() {
-  for (let pair = 0; pair < 4; ++pair) {
-    const box1 = document.querySelector(`.bottom-rhythm-box[data-pair="${pair}"][data-which="0"]`);
-    const box2 = document.querySelector(`.bottom-rhythm-box[data-pair="${pair}"][data-which="1"]`);
-    const picDiv = document.getElementById('bottomPic'+pair);
-    const img = picDiv.querySelector('.bottom-picture-img');
-    let url = dashImgUrl;
-    if (box1.classList.contains('active') && !box2.classList.contains('active')) {
-      url = rhythmBox2;
-    } else if (box1.classList.contains('active') && box2.classList.contains('active')) {
-      url = rhythmBox3;
-    } else if (!box1.classList.contains('active') && box2.classList.contains('active')) {
-      url = rhythmBox4;
-    }
-    img.src = url;
-  }
-}
-
-// --- Playback logic
-
-let isPlaying = false;
-let rhythmInterval = null;
-let slotIds = ['slot0', 'slot1', 'slot2', 'slot3'];
-let slotHighlightStep = 0;
-let pictureHighlightStep = 0;
-let rhythmStep = 0;
-
-function getBpmInputValue() {
-  const bpmInput = document.getElementById('bpmInput');
-  let val = parseInt(bpmInput.value, 10);
-  if (isNaN(val)) val = 90;
-  return val;
-}
-function setBpmInputValue(val) {
-  const bpmInput = document.getElementById('bpmInput');
-  bpmInput.value = val;
-}
-function clampBpm(val) {
-  return Math.max(30, Math.min(300, val));
-}
-
-function setPlaying(playing) {
-  isPlaying = playing;
-  const playIcon = document.getElementById('playIcon');
-  const pauseIcon = document.getElementById('pauseIcon');
-  const playPauseBtn = document.getElementById('playPauseBtn');
-  if (isPlaying) {
-    playIcon.style.display = "none";
-    pauseIcon.style.display = "block";
-    playPauseBtn.title = "Pause";
-    playPauseBtn.setAttribute('aria-label', 'Pause');
-    startMainAnimation();
-  } else {
-    playIcon.style.display = "block";
-    pauseIcon.style.display = "none";
-    playPauseBtn.title = "Play";
-    playPauseBtn.setAttribute('aria-label', 'Play');
-    stopMainAnimation();
-  }
-}
-
-function startMainAnimation() {
-  stopMainAnimation();
-  if (typeof startMainAnimation.preservedSteps === "object" && startMainAnimation.preservedSteps.keep) {
-    slotHighlightStep = startMainAnimation.preservedSteps.slotHighlightStep;
-    pictureHighlightStep = startMainAnimation.preservedSteps.pictureHighlightStep;
-    rhythmStep = startMainAnimation.preservedSteps.rhythmStep;
-    startMainAnimation.preservedSteps.keep = false;
-  } else {
-    slotHighlightStep = 0;
-    pictureHighlightStep = 0;
-    rhythmStep = 0;
-  }
-  updateSlotHighlights();
-  updatePictureHighlights();
-  const bpm = getBpmInputValue();
-  const intervalMs = (60 / bpm) * 1000 / 2;
-  playEighthNoteStep();
-  rhythmInterval = setInterval(playEighthNoteStep, intervalMs);
-}
-
-function stopMainAnimation() {
-  if (rhythmInterval) clearInterval(rhythmInterval);
-  for (let i = 0; i < slotIds.length; i++) unhighlightSlot(i);
-  for (let i = 0; i < 4; i++) unhighlightPicture(i);
-}
-
-function restartAnimationWithBpm() {
-  if (isPlaying) {
-    if (!startMainAnimation.preservedSteps) startMainAnimation.preservedSteps = {};
-    startMainAnimation.preservedSteps.keep = true;
-    startMainAnimation.preservedSteps.slotHighlightStep = slotHighlightStep;
-    startMainAnimation.preservedSteps.pictureHighlightStep = pictureHighlightStep;
-    startMainAnimation.preservedSteps.rhythmStep = rhythmStep;
-    startMainAnimation();
-  }
-}
-
-function playEighthNoteStep() {
-  const currentSlotIdx = slotHighlightStep % 4;
-  const currentSelect = document.getElementById(`slot${currentSlotIdx}`).querySelector('.chord-select');
-
-  const whichBox = rhythmStep % 8;
-  const pair = Math.floor(whichBox / 2);
-  const which = whichBox % 2;
-  const box = document.querySelector(`.bottom-rhythm-box[data-pair="${pair}"][data-which="${which}"]`);
-  if (box && box.classList.contains('active')) {
-    if (currentSelect.value === "") {
-      playBassDrum();
-    } else if (currentSelect.value === "empty") {
-      // Play nothing
-    } else if (rhythmChordNotes[currentSelect.value]) {
-      playTriangleNotes(rhythmChordNotes[currentSelect.value]);
-    }
-  }
-
-  if (rhythmStep % 2 === 0) {
-    playBrush();
-    updatePictureHighlights();
-    pictureHighlightStep = (pictureHighlightStep + 1) % 4;
-  }
-
-  if (rhythmStep === 0) {
-    updateSlotHighlights();
-  }
-
-  rhythmStep = (rhythmStep + 1) % 8;
-  if (rhythmStep === 0) {
-    slotHighlightStep = (slotHighlightStep + 1) % 4;
-  }
-}
-
-function updateSlotHighlights() {
-  for (let i = 0; i < slotIds.length; i++) unhighlightSlot(i);
-  if (isPlaying) {
-    highlightSlot(slotHighlightStep % 4);
-  }
-}
-function highlightSlot(idx) {
-  document.getElementById(slotIds[idx]).classList.add('enlarged');
-}
-function unhighlightSlot(idx) {
-  document.getElementById(slotIds[idx]).classList.remove('enlarged');
-}
-
-function updatePictureHighlights() {
-  for (let i = 0; i < 4; i++) unhighlightPicture(i);
-  if (isPlaying) {
-    highlightPicture(pictureHighlightStep % 4);
-  }
-}
-function highlightPicture(idx) {
-  document.getElementById('bottomPic'+idx).classList.add('picture-highlighted');
-}
-function unhighlightPicture(idx) {
-  document.getElementById('bottomPic'+idx).classList.remove('picture-highlighted');
-}
-
-function clearAll() {
-  // Clear the chord selections
-  for (let i = 0; i < 4; i++) {
-    const slot = document.getElementById('slot'+i);
-    slot.querySelector('.note-rects').innerHTML = '';
-    const select = slot.querySelector('.chord-select');
-    select.selectedIndex = 0;
-    setSlotColorAndStyle(i, select);
-    slot.classList.remove('enlarged');
-    let img = slot.querySelector('.dash-img-slot');
-    if (img) {
-      img.src = restDashImgUrl;
-      img.alt = "Rhythm Box Rest";
-      img.style.display = "block";
-    }
-  }
-  
-  // Clear the rhythm boxes
-  document.querySelectorAll('.bottom-rhythm-box').forEach(box => box.classList.remove('active'));
-  updateRhythmPictures();
-  
-  // Update the current progression in memory (A or B)
-  saveCurrentProgression();
-  
-  setPlaying(false);
-}
-
+// --- DOMContentLoaded & Event Listeners ---
 document.addEventListener("DOMContentLoaded", function() {
+  document.getElementById("wave-left").onclick = () => handleWaveformDial(-1);
+  document.getElementById("wave-right").onclick = () => handleWaveformDial(1);
+  document.getElementById("wave-left").addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Enter" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      handleWaveformDial(-1);
+      document.getElementById("wave-left").focus();
+    }
+  });
+  document.getElementById("wave-right").addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight") {
+      e.preventDefault();
+      handleWaveformDial(1);
+      document.getElementById("wave-right").focus();
+    }
+  });
+  updateWaveformDisplay();
+
+  // Initialize A/B toggle button listeners
+  document.getElementById('toggleA').addEventListener('click', () => switchToggle('A'));
+  document.getElementById('toggleB').addEventListener('click', () => switchToggle('B'));
+  document.getElementById('toggleA').addEventListener('keydown', (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      switchToggle('A');
+    }
+  });
+  document.getElementById('toggleB').addEventListener('keydown', (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      switchToggle('B');
+    }
+  });
+
+  // Chord select
   document.querySelectorAll('.chord-select').forEach((select, idx) => {
     select.addEventListener('change', function() {
       setSlotColorAndStyle(idx, select);
-      // Save current state whenever a chord is changed
       saveCurrentProgression();
     });
     setSlotColorAndStyle(idx, select);
   });
 
+  // 7th buttons
+  document.querySelectorAll('.seventh-btn').forEach((btn, idx) => {
+    btn.addEventListener('click', function() {
+      toggleSeventh(idx);
+    });
+    btn.addEventListener('keydown', function(e) {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        toggleSeventh(idx);
+      }
+    });
+  });
+
+  // Rhythm boxes
   document.querySelectorAll('.bottom-rhythm-box').forEach(box => {
     box.addEventListener('click', function(e) {
       box.classList.toggle('active');
       updateRhythmPictures();
-      // Save current state whenever rhythm boxes are toggled
       saveCurrentProgression();
     });
     box.addEventListener('touchstart', function(e) {
       e.preventDefault();
       box.classList.toggle('active');
       updateRhythmPictures();
-      // Save current state on touch
       saveCurrentProgression();
     }, {passive: false});
     box.setAttribute('tabindex', '0');
@@ -621,12 +731,12 @@ document.addEventListener("DOMContentLoaded", function() {
         e.preventDefault();
         box.classList.toggle('active');
         updateRhythmPictures();
-        // Save current state on keyboard interaction
         saveCurrentProgression();
       }
     });
   });
 
+  // Play/Pause button
   const playPauseBtn = document.getElementById('playPauseBtn');
   playPauseBtn.addEventListener('click', function() {
     setPlaying(!isPlaying);
@@ -642,6 +752,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 
+  // BPM input and stepper
   const bpmInput = document.getElementById('bpmInput');
   const bpmUp = document.getElementById('bpmUp');
   const bpmDown = document.getElementById('bpmDown');
@@ -678,14 +789,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 
-  const brushToggle = document.getElementById('brushToggle');
-  if (brushToggle) {
-    brushToggle.addEventListener('change', function() {
-      // Nothing needs to be done immediately - playBrush will check this value
-      // when it's called
-    });
-  }
-
+  // BPM hold (for holding arrow)
   let bpmHoldInterval = null, bpmHoldTimeout = null;
   function stepBpm(dir) {
     let v = parseInt(bpmInput.value, 10);
@@ -721,6 +825,13 @@ document.addEventListener("DOMContentLoaded", function() {
   bpmUp.addEventListener('click', function() { stepBpm(+1); });
   bpmDown.addEventListener('click', function() { stepBpm(-1); });
 
+  const brushToggle = document.getElementById('brushToggle');
+  if (brushToggle) {
+    brushToggle.addEventListener('change', function() {
+      // Nothing needs to be done immediately - playBrush will check this value when it's called
+    });
+  }
+
   document.getElementById('clear').addEventListener('click', clearAll);
   document.getElementById('clear').addEventListener('touchstart', function(e) {
     e.preventDefault();
@@ -741,4 +852,8 @@ document.addEventListener("DOMContentLoaded", function() {
   const pauseIcon = document.getElementById('pauseIcon');
   playIcon.style.display = "block";
   pauseIcon.style.display = "none";
+
+  // Initialize A with current state
+  saveCurrentProgression();
+  updateSeventhBtnStates();
 });
