@@ -168,12 +168,12 @@ const rhythmChordNotes = {
 const rhythmChordSeventhNotes = {
   'C':  'Bb4',
   'Dm': 'C5',
-  'Em': 'D5',
-  'F':  'Eb5',
+  'Em': 'D4',
+  'F':  'Eb4',
   'G':  'F4',
   'Am': 'G4',
   'D':  'C5',
-  'E':  'D5',
+  'E':  'D4',
   'Bb': 'Ab4'
 };
 
