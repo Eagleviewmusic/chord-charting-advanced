@@ -187,11 +187,11 @@ const noteColorClass = {
   'Abm': 'note-A', 'Ebm': 'note-E', 'Bbm': 'note-B', 'F#m': 'note-F', 'C#m': 'note-C', 'G#m': 'note-G', 'D#m': 'note-D' 
 };
 
-const restDashImgUrl = "https://visualmusicalminds.github.io/images/CartoonRhythmBox5.svg";
-const dashImgUrl = "https://visualmusicalminds.github.io/images/CartoonRhythmBox1.svg";
-const rhythmBox2 = "https://visualmusicalminds.github.io/images/CartoonRhythmBox2.svg";
-const rhythmBox3 = "https://visualmusicalminds.github.io/images/CartoonRhythmBox3.svg";
-const rhythmBox4 = "https://visualmusicalminds.github.io/images/CartoonRhythmBox4.svg";
+const restDashImgUrl = "https://eagleviewmusic.com/images/CartoonRhythmBox5.svg";
+const dashImgUrl = "https://eagleviewmusic.com/images/CartoonRhythmBox1.svg";
+const rhythmBox2 = "https://eagleviewmusic.com/images/CartoonRhythmBox2.svg";
+const rhythmBox3 = "https://eagleviewmusic.com/images/CartoonRhythmBox3.svg";
+const rhythmBox4 = "https://eagleviewmusic.com/images/CartoonRhythmBox4.svg";
 
 
 function setupCustomVoiceWave() {
