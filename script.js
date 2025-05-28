@@ -47,7 +47,7 @@ let currentLinkedProgressionIndex = 0;
 const songs = {
   "eagle-view-song": {
     key: "D",
-    bpm: 120,
+    bpm: 136,
     progressions: {
       A: { 
         chords: ["D", "G", "A", "G"],
