@@ -806,8 +806,8 @@ input[type="number"].bpm-input { width: 50px; font-size: 1em; padding: 4px 0; he
 }
 
 @media (max-width: 600px) { .abcd-toggle-container { width: calc(var(--box-size) * 0.9); } }
-@media (max-width: 480px) { .abcd-toggle-container { width: calc(var(--box-size) * 0.95); max-width: 100px; } .abcd-toggle-btn { padding: calc(var(--box-size) * 0.04) calc(var(--box-size) * 0.03); fon[...]
-@media (max-width: 400px) { .abcd-toggle-container { width: calc(var(--box-size) * 0.98); max-width: 90px; } .abcd-toggle-btn { padding: calc(var(--box-size) * 0.035) calc(var(--box-size) * 0.025); fo[...]
+@media (max-width: 480px) { .abcd-toggle-container { width: calc(var(--box-size) * 0.95); max-width: 100px; } .abcd-toggle-btn { padding: calc(var(--box-size) * 0.04) calc(var(--box-size) * 0.03); font-size: calc(var(--box-size) * 0.11); gap: calc(var(--box-size) * 0.04); } .abcd-link-icon { font-size: calc(var(--box-size) * 0.09); padding: calc(var(--box-size) * 0.015);}}
+@media (max-width: 400px) { .abcd-toggle-container { width: calc(var(--box-size) * 0.98); max-width: 90px; } .abcd-toggle-btn { padding: calc(var(--box-size) * 0.035) calc(var(--box-size) * 0.025); font-size: calc(var(--box-size) * 0.1); gap: calc(var(--box-size) * 0.035);} .abcd-link-icon { font-size: calc(var(--box-size) * 0.085); padding: calc(var(--box-size) * 0.01);}}
 
 /* Key Selector Dial Styles */
 .key-selector-dial {
@@ -902,7 +902,6 @@ select.chord-select[class*="c-selected-f"] { background-color: #2aab2a !importan
 select.chord-select[class*="c-selected-g"] { background-color: #0ac5bc !important; color: black !important; }
 select.chord-select[class*="c-selected-a"] { background-color: #2759ff !important; color: black !important; }
 select.chord-select[class*="c-selected-b"] { background-color: #be1bf5 !important; color: black !important; }
-
 /* Song Selector Menu */
 .song-selector-container {
   width: fit-content; /* Let the container size to its content */
